@@ -14,17 +14,38 @@ import requests
 from bs4 import BeautifulSoup
 
 # 設定
-SEARCH_URL = "https://suumo.jp/chintai/saitama/sc_kasukabe/"
+# せんげん台・一ノ割・武里・大袋、家賃8万以下、2LDK〜3LDK、駅徒歩10分以内
+SEARCH_URL = "https://suumo.jp/jj/chintai/ichiran/FR301FC001/"
 SEARCH_PARAMS = {
-    "md": ["07", "08", "09", "10"],
+    "url": "/chintai/ichiran/FR301FC001/",
+    "ar": "030",
+    "bs": "040",
+    "pc": "30",
+    "smk": "",
+    "po1": "12",
+    "po2": "99",
+    "co": ["1", "3", "4"],
+    "tc": "0400901",
+    "shkr1": "03",
+    "shkr2": "03",
+    "shkr3": "03",
+    "shkr4": "03",
     "cb": "0.0",
     "ct": "8.0",
+    "md": ["07", "08", "09", "10"],
     "et": "10",
+    "mb": "0",
+    "mt": "9999999",
     "cn": "9999999",
+    "ra": "011",
+    "ek": ["044006230", "044021380", "044022860", "044003110"],
+    "rn": "0440",
+    "ae": "04401",
 }
+COOKIE_URL = "https://suumo.jp/chintai/saitama/"
 STATE_FILE = "state.json"
 REQUEST_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -36,13 +57,16 @@ def fetch_all_properties(base_url, params):
     all_rooms = []
     page = 1
 
+    # Cookie 事前取得（SUUMO の /jj/ エンドポイントはセッション必須）
+    session = requests.Session()
+    session.headers.update(REQUEST_HEADERS)
+    session.get(COOKIE_URL, timeout=10)
+
     while True:
         page_params = {**params, "page": str(page)}
 
         try:
-            response = requests.get(
-                base_url, params=page_params, headers=REQUEST_HEADERS, timeout=30
-            )
+            response = session.get(base_url, params=page_params, timeout=30)
             response.raise_for_status()
 
             soup = BeautifulSoup(response.content, "html.parser")
