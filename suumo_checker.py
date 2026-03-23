@@ -201,11 +201,15 @@ def save_state(current_rooms):
     logger.info(f"状態を保存: {len(uids)} 件のUID")
 
 
-def notify_slack(new_rooms):
-    """新着物件をSlackに通知する"""
+def notify_slack(new_rooms, removed_uids):
+    """新着・掲載終了物件をSlackに通知する"""
     webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
     if not webhook_url:
         logger.warning("SLACK_WEBHOOK_URL が未設定。通知をスキップ。")
+        return False
+
+    # 新着も掲載終了もない場合は通知しない
+    if not new_rooms and not removed_uids:
         return False
 
     blocks = [
@@ -213,32 +217,57 @@ def notify_slack(new_rooms):
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": "🏠 SUUMO 新着物件のお知らせ！",
+                "text": "🏠 SUUMO 物件更新のお知らせ",
             },
         },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"春日部エリアで *{len(new_rooms)} 件* の新着物件が見つかりました。",
-            },
-        },
-        {"type": "divider"},
     ]
 
-    for room in new_rooms:
-        text_lines = [
-            f"*<{room['detail_url']}|{room['name']}>*",
-            f"💰 {room['rent']} (管理費: {room['admin_fee']})",
-            f"🏠 {room['layout']} / {room['area']}",
-            f"📍 {room['address']}",
-            f"🚉 {room['station']}",
-            f"🏢 {room['age']} / {room['floor']}",
-        ]
+    # セクション1: 新着物件
+    if new_rooms:
         blocks.append(
             {
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": "\n".join(text_lines)},
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"🆕 新着 *{len(new_rooms)} 件*",
+                },
+            }
+        )
+        for room in new_rooms:
+            text_lines = [
+                f"*<{room['detail_url']}|{room['name']}>*",
+                f"💰 {room['rent']} (管理費: {room['admin_fee']})",
+                f"🏠 {room['layout']} / {room['area']}",
+                f"📍 {room['address']}",
+                f"🚉 {room['station']}",
+                f"🏢 {room['age']} / {room['floor']}",
+            ]
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": "\n".join(text_lines)},
+                }
+            )
+
+    # セクション2: 掲載終了物件
+    if removed_uids:
+        blocks.append({"type": "divider"})
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"📤 掲載終了 *{len(removed_uids)} 件*",
+                },
+            }
+        )
+        uid_list = "\n".join(
+            f"• <https://suumo.jp/chintai/{uid}/|{uid}>" for uid in removed_uids
+        )
+        blocks.append(
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": uid_list},
             }
         )
         blocks.append({"type": "divider"})
@@ -263,17 +292,21 @@ def main():
     current_rooms = fetch_all_properties(SEARCH_URL, SEARCH_PARAMS)
     logger.info(f"取得完了: 合計 {len(current_rooms)} 件")
 
-    previous_uids = load_state()
+    previous_uids = set(load_state())
+    current_uids = set(r["uid"] for r in current_rooms)
 
     new_rooms = [r for r in current_rooms if r["uid"] not in previous_uids]
+    removed_uids = list(previous_uids - current_uids)
 
-    if new_rooms:
-        logger.info(f"{len(new_rooms)} 件の新着物件を発見！")
+    if new_rooms or removed_uids:
+        logger.info(f"更新: 新着 {len(new_rooms)} 件 / 掲載終了 {len(removed_uids)} 件")
         for r in new_rooms:
             logger.info(f"  新着: {r['name']} {r['rent']} {r['layout']} ({r['uid']})")
-        notify_slack(new_rooms)
+        for uid in removed_uids:
+            logger.info(f"  終了: {uid}")
+        notify_slack(new_rooms, removed_uids)
     else:
-        logger.info("新着物件なし。")
+        logger.info("更新なし。")
 
     save_state(current_rooms)
 
